@@ -1,0 +1,122 @@
+[
+  {
+    "_id": "atendimento",
+    "total": 143,
+    "positivo": 65,
+    "neutro": 35,
+    "negativo": 43,
+    "percentPositivo": 45.45454545454545,
+    "percentNeutro": 24.475524475524477,
+    "percentNegativo": 30.069930069930066,
+    "originalWords": ["atendimento"],
+    "normalizedWord": "atendimento"
+  },
+  {
+    "_id": "bom",
+    "total": 54,
+    "positivo": 38,
+    "neutro": 10,
+    "negativo": 6,
+    "percentPositivo": 70.37037037037037,
+    "percentNeutro": 18.51851851851852,
+    "percentNegativo": 11.11111111111111,
+    "originalWords": ["bom"],
+    "normalizedWord": "bom"
+  },
+  {
+    "_id": "Ótimo",
+    "total": 30,
+    "positivo": 25,
+    "neutro": 5,
+    "negativo": 0,
+    "percentPositivo": 83.33333333333334,
+    "percentNeutro": 16.666666666666664,
+    "percentNegativo": 0,
+    "originalWords": ["Ótimo", "ótimo"],
+    "normalizedWord": "otimo"
+  },
+  {
+    "_id": "excelente",
+    "total": 29,
+    "positivo": 19,
+    "neutro": 9,
+    "negativo": 1,
+    "percentPositivo": 65.51724137931035,
+    "percentNeutro": 31.03448275862069,
+    "percentNegativo": 3.4482758620689653,
+    "originalWords": ["excelente"],
+    "normalizedWord": "excelente"
+  },
+  {
+    "_id": "produtos",
+    "total": 22,
+    "positivo": 12,
+    "neutro": 4,
+    "negativo": 6,
+    "percentPositivo": 54.54545454545454,
+    "percentNeutro": 18.181818181818183,
+    "percentNegativo": 27.27272727272727,
+    "originalWords": ["produtos"],
+    "normalizedWord": "produtos"
+  },
+  {
+    "_id": "qualidade",
+    "total": 18,
+    "positivo": 11,
+    "neutro": 3,
+    "negativo": 4,
+    "percentPositivo": 61.111111111111114,
+    "percentNeutro": 16.666666666666664,
+    "percentNegativo": 22.22222222222222,
+    "originalWords": ["qualidade"],
+    "normalizedWord": "qualidade"
+  },
+  {
+    "_id": "rápido",
+    "total": 12,
+    "positivo": 10,
+    "neutro": 1,
+    "negativo": 1,
+    "percentPositivo": 83.33333333333334,
+    "percentNeutro": 8.333333333333332,
+    "percentNegativo": 8.333333333333332,
+    "originalWords": ["rápido"],
+    "normalizedWord": "rapido"
+  },
+  {
+    "_id": "boa",
+    "total": 14,
+    "positivo": 9,
+    "neutro": 4,
+    "negativo": 1,
+    "percentPositivo": 64.28571428571429,
+    "percentNeutro": 28.57142857142857,
+    "percentNegativo": 7.142857142857142,
+    "originalWords": ["boa"],
+    "normalizedWord": "boa"
+  },
+  {
+    "_id": "empresa",
+    "total": 18,
+    "positivo": 9,
+    "neutro": 3,
+    "negativo": 6,
+    "percentPositivo": 50,
+    "percentNeutro": 16.666666666666664,
+    "percentNegativo": 33.33333333333333,
+    "originalWords": ["empresa"],
+    "normalizedWord": "empresa"
+  },
+  {
+    "_id": "melhor",
+    "total": 11,
+    "positivo": 7,
+    "neutro": 2,
+    "negativo": 2,
+    "percentPositivo": 63.63636363636363,
+    "percentNeutro": 18.181818181818183,
+    "percentNegativo": 18.181818181818183,
+    "originalWords": ["melhor"],
+    "normalizedWord": "melhor"
+  }
+]
