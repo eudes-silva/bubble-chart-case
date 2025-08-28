@@ -1,0 +1,17 @@
+:root {
+  --positive-color: #4CAF50;
+  --negative-color: #F44336;
+  --neutral-color: #E6AC00;
+}
+
+html {
+  overflow: hidden;
+  height: 100%;
+}
+
+body {
+  width: auto;
+  height: 100svh;
+  overflow: auto;
+  margin: 0;
+}
