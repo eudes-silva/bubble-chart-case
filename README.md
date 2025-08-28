@@ -26,7 +26,7 @@ Para executar este projeto em sua máquina, siga os passos abaixo:
 
     ```bash
     git clone [https://github.com/eudes-silva/bubble-chart-case.git](https://github.com/eudes-silva/bubble-chart-case.git)
-    cd seu-repositorio
+    cd bubble-chart-case
     ```
 
 2.  **Instale as dependências:**
