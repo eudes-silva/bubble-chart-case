@@ -20,6 +20,8 @@ Este projeto foi desenvolvido utilizando as seguintes tecnologias e bibliotecas:
 
 ## 🚀 Como Rodar Localmente
 
+Este projeto utiliza NodeJS na versão 22.18.0
+
 Para executar este projeto em sua máquina, siga os passos abaixo:
 
 1.  **Clone o repositório:**
