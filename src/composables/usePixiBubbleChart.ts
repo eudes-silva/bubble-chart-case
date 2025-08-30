@@ -13,6 +13,7 @@ export interface BubbleData {
 }
 
 export interface BubbleContainer extends PIXI.Container {
+  id: string;
   vx: number;
   vy: number;
   radius: number;
@@ -171,6 +172,7 @@ export function usePixiBubbleChart(
   };
 
   interface Bubble {
+    id: any;
     x: number;
     y: number;
     vx: number;
@@ -195,6 +197,8 @@ export function usePixiBubbleChart(
   class QuadTree {
     private boundary: Rectangle;
     private capacity: number;
+    private maxDepth: number;
+    private currentDepth: number;
     private bubbles: Bubble[] = [];
     private divided = false;
     private northeast?: QuadTree;
@@ -202,9 +206,16 @@ export function usePixiBubbleChart(
     private southeast?: QuadTree;
     private southwest?: QuadTree;
 
-    constructor(boundary: Rectangle, capacity = 100) {
+    constructor(
+      boundary: Rectangle,
+      capacity = 100,
+      maxDepth = 10,
+      currentDepth = 0
+    ) {
       this.boundary = boundary;
       this.capacity = capacity;
+      this.maxDepth = maxDepth;
+      this.currentDepth = currentDepth;
     }
 
     insert(bubble: Bubble): boolean {
@@ -212,7 +223,12 @@ export function usePixiBubbleChart(
         return false;
       }
 
-      if (this.bubbles.length < this.capacity) {
+      if (!this.divided && this.bubbles.length < this.capacity) {
+        this.bubbles.push(bubble);
+        return true;
+      }
+
+      if (this.currentDepth >= this.maxDepth) {
         this.bubbles.push(bubble);
         return true;
       }
@@ -221,12 +237,17 @@ export function usePixiBubbleChart(
         this.subdivide();
       }
 
-      return (
-        this.northeast!.insert(bubble) ||
-        this.northwest!.insert(bubble) ||
-        this.southeast!.insert(bubble) ||
-        this.southwest!.insert(bubble)
-      );
+      if (this.northeast!.insert(bubble)) return true;
+      if (this.northwest!.insert(bubble)) return true;
+      if (this.southeast!.insert(bubble)) return true;
+      if (this.southwest!.insert(bubble)) return true;
+
+      this.bubbles.push(bubble);
+      return true;
+    }
+
+    private directInsert(bubble: Bubble): void {
+      this.bubbles.push(bubble);
     }
 
     public clear(): void {
@@ -254,11 +275,15 @@ export function usePixiBubbleChart(
 
       this.northeast = new QuadTree(
         { x: x + halfWidth, y, width: halfWidth, height: halfHeight },
-        this.capacity
+        this.capacity,
+        this.maxDepth,
+        this.currentDepth + 1
       );
       this.northwest = new QuadTree(
         { x, y, width: halfWidth, height: halfHeight },
-        this.capacity
+        this.capacity,
+        this.maxDepth,
+        this.currentDepth + 1
       );
       this.southeast = new QuadTree(
         {
@@ -267,14 +292,33 @@ export function usePixiBubbleChart(
           width: halfWidth,
           height: halfHeight,
         },
-        this.capacity
+        this.capacity,
+        this.maxDepth,
+        this.currentDepth + 1
       );
       this.southwest = new QuadTree(
         { x, y: y + halfHeight, width: halfWidth, height: halfHeight },
-        this.capacity
+        this.capacity,
+        this.maxDepth,
+        this.currentDepth + 1
       );
 
       this.divided = true;
+
+      const oldBubbles = [...this.bubbles];
+      this.bubbles = [];
+
+      for (const bubble of oldBubbles) {
+        if (this.northeast!.contains(bubble)) {
+          this.northeast!.directInsert(bubble);
+        } else if (this.northwest!.contains(bubble)) {
+          this.northwest!.directInsert(bubble);
+        } else if (this.southeast!.contains(bubble)) {
+          this.southeast!.directInsert(bubble);
+        } else if (this.southwest!.contains(bubble)) {
+          this.southwest!.directInsert(bubble);
+        }
+      }
     }
 
     queryRange(range: Rectangle): Bubble[] {
@@ -300,6 +344,30 @@ export function usePixiBubbleChart(
       return found;
     }
 
+    queryCircle(center: Point, radius: number): Bubble[] {
+      const found: Bubble[] = [];
+      const squaredRadius = radius * radius;
+
+      const boundingBox: Rectangle = {
+        x: center.x - radius,
+        y: center.y - radius,
+        width: radius * 2,
+        height: radius * 2,
+      };
+
+      const candidates = this.queryRange(boundingBox);
+
+      for (const bubble of candidates) {
+        const dx = bubble.x - center.x;
+        const dy = bubble.y - center.y;
+        if (dx * dx + dy * dy <= squaredRadius) {
+          found.push(bubble);
+        }
+      }
+
+      return found;
+    }
+
     private intersects(range: Rectangle): boolean {
       return !(
         range.x > this.boundary.x + this.boundary.width ||
@@ -316,6 +384,139 @@ export function usePixiBubbleChart(
         point.y >= rect.y &&
         point.y < rect.y + rect.height
       );
+    }
+
+    remove(bubble: Bubble): boolean {
+      if (!this.contains(bubble)) {
+        return false;
+      }
+
+      const index = this.bubbles.findIndex(
+        (b) =>
+          b.x === bubble.x &&
+          b.y === bubble.y &&
+          (b.id === bubble.id || (!b.id && !bubble.id))
+      );
+
+      if (index !== -1) {
+        this.bubbles.splice(index, 1);
+        return true;
+      }
+
+      if (this.divided) {
+        return (
+          this.northeast!.remove(bubble) ||
+          this.northwest!.remove(bubble) ||
+          this.southeast!.remove(bubble) ||
+          this.southwest!.remove(bubble)
+        );
+      }
+
+      return false;
+    }
+
+    getAllBoundaries(): Rectangle[] {
+      const boundaries: Rectangle[] = [this.boundary];
+
+      if (this.divided) {
+        boundaries.push(...this.northeast!.getAllBoundaries());
+        boundaries.push(...this.northwest!.getAllBoundaries());
+        boundaries.push(...this.southeast!.getAllBoundaries());
+        boundaries.push(...this.southwest!.getAllBoundaries());
+      }
+
+      return boundaries;
+    }
+
+    public getBoundary(): Rectangle {
+      return { ...this.boundary };
+    }
+
+    public getDepth(): number {
+      if (!this.divided) {
+        return 1;
+      }
+      return (
+        1 +
+        Math.max(
+          this.northeast!.getDepth(),
+          this.northwest!.getDepth(),
+          this.southeast!.getDepth(),
+          this.southwest!.getDepth()
+        )
+      );
+    }
+
+    public getTotalNodes(): number {
+      if (!this.divided) {
+        return 1;
+      }
+      return (
+        1 +
+        this.northeast!.getTotalNodes() +
+        this.northwest!.getTotalNodes() +
+        this.southeast!.getTotalNodes() +
+        this.southwest!.getTotalNodes()
+      );
+    }
+
+    public getBubbleCount(): number {
+      let count = this.bubbles.length;
+      if (this.divided) {
+        count += this.northeast!.getBubbleCount();
+        count += this.northwest!.getBubbleCount();
+        count += this.southeast!.getBubbleCount();
+        count += this.southwest!.getBubbleCount();
+      }
+      return count;
+    }
+
+    public getAllBubbles(): Bubble[] {
+      let bubbles = [...this.bubbles];
+      if (this.divided) {
+        bubbles.push(...this.northeast!.getAllBubbles());
+        bubbles.push(...this.northwest!.getAllBubbles());
+        bubbles.push(...this.southeast!.getAllBubbles());
+        bubbles.push(...this.southwest!.getAllBubbles());
+      }
+      return bubbles;
+    }
+
+    public isEmpty(): boolean {
+      if (this.bubbles.length > 0) {
+        return false;
+      }
+      if (this.divided) {
+        return (
+          this.northeast!.isEmpty() &&
+          this.northwest!.isEmpty() &&
+          this.southeast!.isEmpty() &&
+          this.southwest!.isEmpty()
+        );
+      }
+      return true;
+    }
+
+    public optimize(): void {
+      if (this.divided) {
+        this.northeast!.optimize();
+        this.northwest!.optimize();
+        this.southeast!.optimize();
+        this.southwest!.optimize();
+
+        if (
+          this.northeast!.isEmpty() &&
+          !this.northeast!.divided &&
+          this.northwest!.isEmpty() &&
+          !this.northwest!.divided &&
+          this.southeast!.isEmpty() &&
+          !this.southeast!.divided &&
+          this.southwest!.isEmpty() &&
+          !this.southwest!.divided
+        ) {
+          this.clear();
+        }
+      }
     }
   }
 
