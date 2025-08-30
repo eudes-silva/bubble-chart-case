@@ -36,12 +36,11 @@ onUnmounted(() => {
 
 <template>
   <div class="relative w-full h-full flex flex-col items-center justify-start">
-    <div class="relative w-full h-full flex items-center justify-center p-4">
-      <div
-        ref="pixiContainerRef"
-        class="w-full h-full max-w-[1200px] max-h-[800px]"
-      />
-    </div>
+    <div
+      ref="pixiContainerRef"
+      class="w-full h-full"
+      style="overflow: hidden; touch-action: none"
+    />
 
     <BubbleTooltip
       :visible="tooltip.visible"

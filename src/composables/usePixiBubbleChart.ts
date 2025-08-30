@@ -33,15 +33,13 @@ export function usePixiBubbleChart(
   data: Ref<BubbleData[]>,
   title: Ref<string>
 ) {
-  const TITLE_HEIGHT = 60;
-
   const pixiContainerRef = ref<HTMLDivElement | null>(null);
-  const containerRef = ref<HTMLDivElement | null>(null);
   const bubbleContainers = ref<BubbleContainer[]>([]);
   const activeBubble = ref<BubbleContainer | null>(null);
   const devicePixelRatio = ref(1);
 
   let pixiApp: PIXI.Application | null = null;
+  let currentTitleText: PIXI.Text | null = null;
 
   const { calculatePercentages } = usePercentageCalculator();
 
@@ -52,54 +50,61 @@ export function usePixiBubbleChart(
     data: null,
   });
 
-  const radiusFromTotal = (total: number): number => {
-    return Math.max(30, Math.sqrt(total) * 8);
+  const getResponsiveScaleFactor = (canvasWidth: number): number => {
+    if (canvasWidth < 480) return 1.3;
+    if (canvasWidth < 640) return 1.4;
+    if (canvasWidth < 768) return 1.6;
+    if (canvasWidth < 1024) return 1.7;
+    if (canvasWidth < 1280) return 1.8;
+    if (canvasWidth < 1600) return 1.9;
+    return 2.0;
+  };
+
+  const radiusFromTotal = (total: number, canvasWidth: number): number => {
+    const scaleFactor = getResponsiveScaleFactor(canvasWidth);
+    return Math.max(15 * scaleFactor, Math.sqrt(total) * 6 * scaleFactor);
   };
 
   const getResponsiveTitleSize = (canvasWidth: number): number => {
-    if (canvasWidth < 640) return 18;
-    if (canvasWidth < 768) return 20;
-    if (canvasWidth < 1024) return 24;
-    if (canvasWidth < 1280) return 30;
+    if (canvasWidth < 480) return 16;
+    if (canvasWidth < 640) return 20;
+    if (canvasWidth < 768) return 24;
+    if (canvasWidth < 1024) return 28;
+    if (canvasWidth < 1280) return 32;
     return 36;
   };
 
   const getTitlePosition = (canvasHeight: number): number => {
-    return canvasHeight < 400 ? 16 : 24;
+    return canvasHeight * 0.05;
   };
 
   const resizeCanvas = () => {
-    if (!pixiApp || !containerRef.value) return;
+    if (!pixiApp || !pixiContainerRef.value) return;
 
-    const parentWidth = containerRef.value.clientWidth;
-    const parentHeight = containerRef.value.clientHeight;
+    const parentWidth = pixiContainerRef.value.clientWidth;
+    const parentHeight = pixiContainerRef.value.clientHeight;
 
-    if (window.innerWidth < 768) {
-      pixiApp.renderer.resize(parentWidth, parentHeight);
-    } else {
-      const aspectRatio = 16 / 9;
-      let newWidth: number, newHeight: number;
-
-      if (parentWidth / parentHeight > aspectRatio) {
-        newHeight = parentHeight;
-        newWidth = parentHeight * aspectRatio;
-      } else {
-        newWidth = parentWidth;
-        newHeight = parentWidth / aspectRatio;
-      }
-
-      pixiApp.renderer.resize(newWidth, newHeight);
-    }
+    pixiApp.renderer.resize(parentWidth, parentHeight);
+    pixiApp.canvas.style.width = `${parentWidth}px`;
+    pixiApp.canvas.style.height = `${parentHeight}px`;
 
     requestAnimationFrame(() => {
       initializeBubbles();
     });
   };
 
-  const drawBubble = (g: PIXI.Graphics, bubbleData: BubbleData) => {
+  const drawBubble = (
+    g: PIXI.Graphics,
+    bubbleData: BubbleData,
+    canvasWidth: number
+  ) => {
     g.clear();
-    const radius = radiusFromTotal(bubbleData.total);
-    const donutThickness = 8;
+    const radius = radiusFromTotal(bubbleData.total, canvasWidth);
+    const scaleFactor = getResponsiveScaleFactor(canvasWidth);
+    const donutThickness = Math.max(
+      4 * scaleFactor,
+      Math.min(8 * scaleFactor, radius * 0.1)
+    );
     const outerRadius = radius;
     const innerRadius = radius - donutThickness;
 
@@ -147,9 +152,14 @@ export function usePixiBubbleChart(
 
   const createBubbleText = (
     bubbleData: BubbleData,
-    radius: number
+    radius: number,
+    canvasWidth: number
   ): PIXI.Text => {
-    const maxFontSize = Math.max(10, Math.min(18, radius * 0.4));
+    const scaleFactor = getResponsiveScaleFactor(canvasWidth);
+    const maxFontSize = Math.max(
+      8 * scaleFactor,
+      Math.min(18 * scaleFactor, radius * 0.4)
+    );
     const padding = radius * 0.2;
     const maxTextWidth = (radius - padding) * 2;
 
@@ -172,7 +182,7 @@ export function usePixiBubbleChart(
   };
 
   interface Bubble {
-    id: any;
+    id: string;
     x: number;
     y: number;
     vx: number;
@@ -261,10 +271,10 @@ export function usePixiBubbleChart(
 
     private contains(bubble: Bubble): boolean {
       return (
-        bubble.x >= this.boundary.x &&
-        bubble.x < this.boundary.x + this.boundary.width &&
-        bubble.y >= this.boundary.y &&
-        bubble.y < this.boundary.y + this.boundary.height
+        bubble.x + bubble.radius >= this.boundary.x &&
+        bubble.x - bubble.radius < this.boundary.x + this.boundary.width &&
+        bubble.y + bubble.radius >= this.boundary.y &&
+        bubble.y - bubble.radius < this.boundary.y + this.boundary.height
       );
     }
 
@@ -317,6 +327,8 @@ export function usePixiBubbleChart(
           this.southeast!.directInsert(bubble);
         } else if (this.southwest!.contains(bubble)) {
           this.southwest!.directInsert(bubble);
+        } else {
+          this.directInsert(bubble);
         }
       }
     }
@@ -329,7 +341,12 @@ export function usePixiBubbleChart(
       }
 
       for (const bubble of this.bubbles) {
-        if (this.pointInRectangle(bubble, range)) {
+        if (
+          bubble.x - bubble.radius < range.x + range.width &&
+          bubble.x + bubble.radius > range.x &&
+          bubble.y - bubble.radius < range.y + range.height &&
+          bubble.y + bubble.radius > range.y
+        ) {
           found.push(bubble);
         }
       }
@@ -377,26 +394,12 @@ export function usePixiBubbleChart(
       );
     }
 
-    private pointInRectangle(point: Point, rect: Rectangle): boolean {
-      return (
-        point.x >= rect.x &&
-        point.x < rect.x + rect.width &&
-        point.y >= rect.y &&
-        point.y < rect.y + rect.height
-      );
-    }
-
     remove(bubble: Bubble): boolean {
       if (!this.contains(bubble)) {
         return false;
       }
 
-      const index = this.bubbles.findIndex(
-        (b) =>
-          b.x === bubble.x &&
-          b.y === bubble.y &&
-          (b.id === bubble.id || (!b.id && !bubble.id))
-      );
+      const index = this.bubbles.findIndex((b) => b.id === bubble.id);
 
       if (index !== -1) {
         this.bubbles.splice(index, 1);
@@ -531,6 +534,7 @@ export function usePixiBubbleChart(
   let physicsManagerCache: PhysicsManager | null = null;
   let lastCanvasWidth = 0;
   let lastCanvasHeight = 0;
+  let lastTitleHeight = 0;
 
   class PhysicsManager {
     public canvasWidth: number;
@@ -643,14 +647,8 @@ export function usePixiBubbleChart(
         const nearbyBubbles = this.quadTree.queryRange(searchArea);
 
         for (const nearbyBubble of nearbyBubbles) {
-          if (nearbyBubble !== bubble) {
-            const pairKey = `${Math.min(bubble.x, nearbyBubble.x)},${Math.min(
-              bubble.y,
-              nearbyBubble.y
-            )}-${Math.max(bubble.x, nearbyBubble.x)},${Math.max(
-              bubble.y,
-              nearbyBubble.y
-            )}`;
+          if (nearbyBubble.id !== bubble.id) {
+            const pairKey = [bubble.id, nearbyBubble.id].sort().join("-");
 
             if (!processedPairs.has(pairKey)) {
               this.handleBubbleCollision(bubble, nearbyBubble);
@@ -681,18 +679,24 @@ export function usePixiBubbleChart(
     const canvasWidth = pixiApp.renderer.width;
     const canvasHeight = pixiApp.renderer.height;
 
+    const actualTitleHeight = currentTitleText
+      ? currentTitleText.height + currentTitleText.y
+      : getTitlePosition(canvasHeight) * 2;
+
     if (
       !physicsManagerCache ||
       lastCanvasWidth !== canvasWidth ||
-      lastCanvasHeight !== canvasHeight
+      lastCanvasHeight !== canvasHeight ||
+      lastTitleHeight !== actualTitleHeight
     ) {
       physicsManagerCache = new PhysicsManager(
         canvasWidth,
         canvasHeight,
-        TITLE_HEIGHT
+        actualTitleHeight
       );
       lastCanvasWidth = canvasWidth;
       lastCanvasHeight = canvasHeight;
+      lastTitleHeight = actualTitleHeight;
     }
 
     physicsManagerCache.updatePhysics(bubbleContainers.value);
@@ -702,7 +706,7 @@ export function usePixiBubbleChart(
       tooltip.value.visible = true;
       tooltip.value.x = rect.left + activeBubble.value.x;
       tooltip.value.y =
-        rect.top + activeBubble.value.y - activeBubble.value.radius;
+        rect.top + activeBubble.value.y - activeBubble.value.radius - 10;
       tooltip.value.data = activeBubble.value.data;
     } else {
       tooltip.value.visible = false;
@@ -732,47 +736,64 @@ export function usePixiBubbleChart(
     const canvasWidth = pixiApp.renderer.width;
     const canvasHeight = pixiApp.renderer.height;
     const centerX = canvasWidth / 2;
-    const centerY = TITLE_HEIGHT + (canvasHeight - TITLE_HEIGHT) * 0.4;
-    const spawnRadius = Math.min(
-      canvasWidth / 3,
-      (canvasHeight - TITLE_HEIGHT) * 0.4
-    );
 
     const titleFontSize = getResponsiveTitleSize(canvasWidth);
-    const titleText = new PIXI.Text({
-      text: title.value,
-      style: {
-        fontSize: titleFontSize,
-        fill: 0x333333,
-        fontWeight: "bold",
-        wordWrap: true,
-        wordWrapWidth: canvasWidth * 0.9,
-        align: "center",
-      } as PIXI.TextStyle,
-    });
+    const titlePosition = getTitlePosition(canvasHeight);
 
-    titleText.anchor.set(0.5);
-    titleText.x = canvasWidth / 2;
-    titleText.y = getTitlePosition(canvasHeight);
-    pixiApp.stage.addChild(titleText);
+    if (currentTitleText) {
+      currentTitleText.removeFromParent();
+      currentTitleText.text = title.value;
+      (currentTitleText.style as PIXI.TextStyle).fontSize = titleFontSize;
+      (currentTitleText.style as PIXI.TextStyle).wordWrapWidth =
+        canvasWidth * 0.9;
+    } else {
+      currentTitleText = new PIXI.Text({
+        text: title.value,
+        style: {
+          fontSize: titleFontSize,
+          fill: 0x333333,
+          fontWeight: "bold",
+          wordWrap: true,
+          wordWrapWidth: canvasWidth * 0.9,
+          align: "center",
+          fontFamily: "Arial, sans-serif",
+        } as PIXI.TextStyle,
+      });
+    }
+
+    currentTitleText.anchor.set(0.5);
+    currentTitleText.x = centerX;
+    currentTitleText.y = titlePosition;
+    pixiApp.stage.addChild(currentTitleText);
+
+    const titleMarginBottom = 20;
+    const bubblesStartY =
+      titlePosition + currentTitleText.height + titleMarginBottom;
+    const centerY = bubblesStartY + (canvasHeight - bubblesStartY) * 0.4;
+
+    const spawnRadius = Math.min(
+      canvasWidth / 3,
+      (canvasHeight - bubblesStartY) * 0.4
+    );
 
     data.value.forEach((bubbleData) => {
-      const radius = radiusFromTotal(bubbleData.total);
+      const radius = radiusFromTotal(bubbleData.total, canvasWidth);
 
       const container = new PIXI.Container() as BubbleContainer;
       container.eventMode = "static";
       container.cursor = "pointer";
       container.data = bubbleData;
+      container.id = bubbleData._id;
       container.radius = radius;
       container.vx = (Math.random() - 0.5) * 0.1;
       container.vy = (Math.random() - 0.5) * 0.1;
 
       const graphics = new PIXI.Graphics();
-      drawBubble(graphics, bubbleData);
+      drawBubble(graphics, bubbleData, canvasWidth);
       container.addChild(graphics);
       container.graphics = graphics;
 
-      const text = createBubbleText(bubbleData, radius);
+      const text = createBubbleText(bubbleData, radius, canvasWidth);
       container.addChild(text);
       container.text = text;
 
@@ -802,7 +823,7 @@ export function usePixiBubbleChart(
       devicePixelRatio.value = window.devicePixelRatio || 1;
     }
 
-    if (pixiContainerRef.value) {
+    if (pixiContainerRef.value && !pixiApp) {
       pixiApp = new PIXI.Application();
 
       await pixiApp.init({
@@ -817,13 +838,14 @@ export function usePixiBubbleChart(
       });
 
       pixiContainerRef.value.appendChild(pixiApp.canvas);
-      containerRef.value = pixiContainerRef.value;
 
       resizeCanvas();
       window.addEventListener("resize", resizeCanvas);
 
       initializeBubbles();
       pixiApp.ticker.add(updatePhysics);
+    } else if (pixiApp) {
+      resizeCanvas();
     }
   };
 
@@ -833,6 +855,7 @@ export function usePixiBubbleChart(
       pixiApp.ticker.remove(updatePhysics);
       pixiApp.destroy();
       pixiApp = null;
+      currentTitleText = null;
     }
     bubbleContainers.value = [];
   };
