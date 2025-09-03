@@ -29,6 +29,29 @@ export interface TooltipState {
   data: BubbleData | null;
 }
 
+const RESPONSIVE_CONFIG = {
+  scale: {
+    breakpoints: [480, 640, 768, 1024, 1280, 1600],
+    values: [1.3, 1.4, 1.6, 1.7, 1.8, 1.9, 2.0],
+  },
+  titleSize: {
+    breakpoints: [480, 640, 768, 1024, 1280],
+    values: [16, 20, 24, 28, 32, 36],
+  },
+};
+
+const PHYSICS_CONFIG = {
+  damping: 0.85,
+  desiredSpacing: 25,
+  attractionForce: 0.002,
+  repulsionMultiplier: 0.1,
+  bounceMultiplier: -1,
+  shadowOffset: 2,
+  largeBubbleThreshold: 0.7,
+  centerZoneRadius: 150,
+  strongCenterForce: 0.01,
+} as const;
+
 export function usePixiBubbleChart(
   data: Ref<BubbleData[]>,
   title: Ref<string>
@@ -36,7 +59,6 @@ export function usePixiBubbleChart(
   const pixiContainerRef = ref<HTMLDivElement | null>(null);
   const bubbleContainers = ref<BubbleContainer[]>([]);
   const activeBubble = ref<BubbleContainer | null>(null);
-  const devicePixelRatio = ref(1);
 
   let pixiApp: PIXI.Application | null = null;
   let currentTitleText: PIXI.Text | null = null;
@@ -50,33 +72,29 @@ export function usePixiBubbleChart(
     data: null,
   });
 
-  const getResponsiveScaleFactor = (canvasWidth: number): number => {
-    if (canvasWidth < 480) return 1.3;
-    if (canvasWidth < 640) return 1.4;
-    if (canvasWidth < 768) return 1.6;
-    if (canvasWidth < 1024) return 1.7;
-    if (canvasWidth < 1280) return 1.8;
-    if (canvasWidth < 1600) return 1.9;
-    return 2.0;
+  const getResponsiveValue = (
+    width: number,
+    config: typeof RESPONSIVE_CONFIG.scale
+  ): number => {
+    const index = config.breakpoints.findIndex((bp) => width < bp);
+    return index === -1
+      ? config.values[config.values.length - 1]
+      : config.values[index];
   };
+
+  const getResponsiveScaleFactor = (canvasWidth: number): number =>
+    getResponsiveValue(canvasWidth, RESPONSIVE_CONFIG.scale);
+
+  const getResponsiveTitleSize = (canvasWidth: number): number =>
+    getResponsiveValue(canvasWidth, RESPONSIVE_CONFIG.titleSize);
 
   const radiusFromTotal = (total: number, canvasWidth: number): number => {
     const scaleFactor = getResponsiveScaleFactor(canvasWidth);
     return Math.max(15 * scaleFactor, Math.sqrt(total) * 6 * scaleFactor);
   };
 
-  const getResponsiveTitleSize = (canvasWidth: number): number => {
-    if (canvasWidth < 480) return 16;
-    if (canvasWidth < 640) return 20;
-    if (canvasWidth < 768) return 24;
-    if (canvasWidth < 1024) return 28;
-    if (canvasWidth < 1280) return 32;
-    return 36;
-  };
-
-  const getTitlePosition = (canvasHeight: number): number => {
-    return canvasHeight * 0.05;
-  };
+  const getTitlePosition = (canvasHeight: number): number =>
+    canvasHeight * 0.05;
 
   const resizeCanvas = () => {
     if (!pixiApp || !pixiContainerRef.value) return;
@@ -108,14 +126,14 @@ export function usePixiBubbleChart(
     const outerRadius = radius;
     const innerRadius = radius - donutThickness;
 
-    g.circle(0, 0, innerRadius);
-    g.fill({ color: 0xffffff });
-
-    g.circle(2, 2, outerRadius);
+    g.circle(
+      PHYSICS_CONFIG.shadowOffset,
+      PHYSICS_CONFIG.shadowOffset,
+      outerRadius
+    );
     g.fill({ color: 0x000000, alpha: 0.15 });
 
     let currentAngle = -Math.PI / 2;
-
     const percentages = calculatePercentages({
       positivo: bubbleData.positivo,
       neutro: bubbleData.neutro,
@@ -132,21 +150,17 @@ export function usePixiBubbleChart(
     slices.forEach((slice) => {
       if (slice.percentage > 0) {
         const angle = (slice.percentage / 100) * Math.PI * 2;
-
         g.beginPath();
         g.moveTo(0, 0);
         g.arc(0, 0, outerRadius, currentAngle, currentAngle + angle);
         g.closePath();
         g.fill({ color: slice.color });
-
         currentAngle += angle;
       }
     });
 
     g.circle(0, 0, innerRadius);
     g.fill({ color: 0xffffff });
-
-    g.circle(0, 0, innerRadius);
     g.stroke({ width: 1, color: 0xcccccc });
   };
 
@@ -188,8 +202,7 @@ export function usePixiBubbleChart(
     vx: number;
     vy: number;
     radius: number;
-    alpha: number;
-    data?: any;
+    data?: BubbleData;
   }
 
   interface Rectangle {
@@ -197,11 +210,6 @@ export function usePixiBubbleChart(
     y: number;
     width: number;
     height: number;
-  }
-
-  interface Point {
-    x: number;
-    y: number;
   }
 
   class QuadTree {
@@ -229,9 +237,7 @@ export function usePixiBubbleChart(
     }
 
     insert(bubble: Bubble): boolean {
-      if (!this.contains(bubble)) {
-        return false;
-      }
+      if (!this.contains(bubble)) return false;
 
       if (!this.divided && this.bubbles.length < this.capacity) {
         this.bubbles.push(bubble);
@@ -247,26 +253,23 @@ export function usePixiBubbleChart(
         this.subdivide();
       }
 
-      if (this.northeast!.insert(bubble)) return true;
-      if (this.northwest!.insert(bubble)) return true;
-      if (this.southeast!.insert(bubble)) return true;
-      if (this.southwest!.insert(bubble)) return true;
-
-      this.bubbles.push(bubble);
-      return true;
+      return (
+        this.northeast!.insert(bubble) ||
+        this.northwest!.insert(bubble) ||
+        this.southeast!.insert(bubble) ||
+        this.southwest!.insert(bubble) ||
+        (this.bubbles.push(bubble), true)
+      );
     }
 
-    private directInsert(bubble: Bubble): void {
-      this.bubbles.push(bubble);
-    }
-
-    public clear(): void {
+    clear(): void {
       this.bubbles = [];
       this.divided = false;
-      this.northeast = undefined;
-      this.northwest = undefined;
-      this.southeast = undefined;
-      this.southwest = undefined;
+      this.northeast =
+        this.northwest =
+        this.southeast =
+        this.southwest =
+          undefined;
     }
 
     private contains(bubble: Bubble): boolean {
@@ -282,18 +285,19 @@ export function usePixiBubbleChart(
       const { x, y, width, height } = this.boundary;
       const halfWidth = width / 2;
       const halfHeight = height / 2;
+      const nextDepth = this.currentDepth + 1;
 
       this.northeast = new QuadTree(
         { x: x + halfWidth, y, width: halfWidth, height: halfHeight },
         this.capacity,
         this.maxDepth,
-        this.currentDepth + 1
+        nextDepth
       );
       this.northwest = new QuadTree(
         { x, y, width: halfWidth, height: halfHeight },
         this.capacity,
         this.maxDepth,
-        this.currentDepth + 1
+        nextDepth
       );
       this.southeast = new QuadTree(
         {
@@ -304,13 +308,13 @@ export function usePixiBubbleChart(
         },
         this.capacity,
         this.maxDepth,
-        this.currentDepth + 1
+        nextDepth
       );
       this.southwest = new QuadTree(
         { x, y: y + halfHeight, width: halfWidth, height: halfHeight },
         this.capacity,
         this.maxDepth,
-        this.currentDepth + 1
+        nextDepth
       );
 
       this.divided = true;
@@ -319,16 +323,8 @@ export function usePixiBubbleChart(
       this.bubbles = [];
 
       for (const bubble of oldBubbles) {
-        if (this.northeast!.contains(bubble)) {
-          this.northeast!.directInsert(bubble);
-        } else if (this.northwest!.contains(bubble)) {
-          this.northwest!.directInsert(bubble);
-        } else if (this.southeast!.contains(bubble)) {
-          this.southeast!.directInsert(bubble);
-        } else if (this.southwest!.contains(bubble)) {
-          this.southwest!.directInsert(bubble);
-        } else {
-          this.directInsert(bubble);
+        if (!this.insert(bubble)) {
+          this.bubbles.push(bubble);
         }
       }
     }
@@ -336,9 +332,7 @@ export function usePixiBubbleChart(
     queryRange(range: Rectangle): Bubble[] {
       const found: Bubble[] = [];
 
-      if (!this.intersects(range)) {
-        return found;
-      }
+      if (!this.intersects(range)) return found;
 
       for (const bubble of this.bubbles) {
         if (
@@ -352,34 +346,12 @@ export function usePixiBubbleChart(
       }
 
       if (this.divided) {
-        found.push(...this.northeast!.queryRange(range));
-        found.push(...this.northwest!.queryRange(range));
-        found.push(...this.southeast!.queryRange(range));
-        found.push(...this.southwest!.queryRange(range));
-      }
-
-      return found;
-    }
-
-    queryCircle(center: Point, radius: number): Bubble[] {
-      const found: Bubble[] = [];
-      const squaredRadius = radius * radius;
-
-      const boundingBox: Rectangle = {
-        x: center.x - radius,
-        y: center.y - radius,
-        width: radius * 2,
-        height: radius * 2,
-      };
-
-      const candidates = this.queryRange(boundingBox);
-
-      for (const bubble of candidates) {
-        const dx = bubble.x - center.x;
-        const dy = bubble.y - center.y;
-        if (dx * dx + dy * dy <= squaredRadius) {
-          found.push(bubble);
-        }
+        found.push(
+          ...this.northeast!.queryRange(range),
+          ...this.northwest!.queryRange(range),
+          ...this.southeast!.queryRange(range),
+          ...this.southwest!.queryRange(range)
+        );
       }
 
       return found;
@@ -393,143 +365,7 @@ export function usePixiBubbleChart(
         range.y + range.height < this.boundary.y
       );
     }
-
-    remove(bubble: Bubble): boolean {
-      if (!this.contains(bubble)) {
-        return false;
-      }
-
-      const index = this.bubbles.findIndex((b) => b.id === bubble.id);
-
-      if (index !== -1) {
-        this.bubbles.splice(index, 1);
-        return true;
-      }
-
-      if (this.divided) {
-        return (
-          this.northeast!.remove(bubble) ||
-          this.northwest!.remove(bubble) ||
-          this.southeast!.remove(bubble) ||
-          this.southwest!.remove(bubble)
-        );
-      }
-
-      return false;
-    }
-
-    getAllBoundaries(): Rectangle[] {
-      const boundaries: Rectangle[] = [this.boundary];
-
-      if (this.divided) {
-        boundaries.push(...this.northeast!.getAllBoundaries());
-        boundaries.push(...this.northwest!.getAllBoundaries());
-        boundaries.push(...this.southeast!.getAllBoundaries());
-        boundaries.push(...this.southwest!.getAllBoundaries());
-      }
-
-      return boundaries;
-    }
-
-    public getBoundary(): Rectangle {
-      return { ...this.boundary };
-    }
-
-    public getDepth(): number {
-      if (!this.divided) {
-        return 1;
-      }
-      return (
-        1 +
-        Math.max(
-          this.northeast!.getDepth(),
-          this.northwest!.getDepth(),
-          this.southeast!.getDepth(),
-          this.southwest!.getDepth()
-        )
-      );
-    }
-
-    public getTotalNodes(): number {
-      if (!this.divided) {
-        return 1;
-      }
-      return (
-        1 +
-        this.northeast!.getTotalNodes() +
-        this.northwest!.getTotalNodes() +
-        this.southeast!.getTotalNodes() +
-        this.southwest!.getTotalNodes()
-      );
-    }
-
-    public getBubbleCount(): number {
-      let count = this.bubbles.length;
-      if (this.divided) {
-        count += this.northeast!.getBubbleCount();
-        count += this.northwest!.getBubbleCount();
-        count += this.southeast!.getBubbleCount();
-        count += this.southwest!.getBubbleCount();
-      }
-      return count;
-    }
-
-    public getAllBubbles(): Bubble[] {
-      let bubbles = [...this.bubbles];
-      if (this.divided) {
-        bubbles.push(...this.northeast!.getAllBubbles());
-        bubbles.push(...this.northwest!.getAllBubbles());
-        bubbles.push(...this.southeast!.getAllBubbles());
-        bubbles.push(...this.southwest!.getAllBubbles());
-      }
-      return bubbles;
-    }
-
-    public isEmpty(): boolean {
-      if (this.bubbles.length > 0) {
-        return false;
-      }
-      if (this.divided) {
-        return (
-          this.northeast!.isEmpty() &&
-          this.northwest!.isEmpty() &&
-          this.southeast!.isEmpty() &&
-          this.southwest!.isEmpty()
-        );
-      }
-      return true;
-    }
-
-    public optimize(): void {
-      if (this.divided) {
-        this.northeast!.optimize();
-        this.northwest!.optimize();
-        this.southeast!.optimize();
-        this.southwest!.optimize();
-
-        if (
-          this.northeast!.isEmpty() &&
-          !this.northeast!.divided &&
-          this.northwest!.isEmpty() &&
-          !this.northwest!.divided &&
-          this.southeast!.isEmpty() &&
-          !this.southeast!.divided &&
-          this.southwest!.isEmpty() &&
-          !this.southwest!.divided
-        ) {
-          this.clear();
-        }
-      }
-    }
   }
-
-  const PHYSICS_CONFIG = {
-    damping: 0.85,
-    desiredSpacing: 25,
-    attractionForce: 0.002,
-    repulsionMultiplier: 0.1,
-    bounceMultiplier: -1,
-  } as const;
 
   let physicsManagerCache: PhysicsManager | null = null;
   let lastCanvasWidth = 0;
@@ -543,6 +379,7 @@ export function usePixiBubbleChart(
     private centerX: number;
     private centerY: number;
     private quadTree: QuadTree;
+    private maxBubbleSize: number;
 
     constructor(
       canvasWidth: number,
@@ -554,6 +391,7 @@ export function usePixiBubbleChart(
       this.topBoundary = titleHeight;
       this.centerX = canvasWidth / 2;
       this.centerY = titleHeight + (canvasHeight - titleHeight) * 0.4;
+      this.maxBubbleSize = 0;
 
       this.quadTree = new QuadTree({
         x: 0,
@@ -563,17 +401,16 @@ export function usePixiBubbleChart(
       });
     }
 
-    private applyDamping(bubble: Bubble): void {
+    private updateBubblePhysics(bubble: Bubble & { data?: BubbleData }): void {
       bubble.vx *= PHYSICS_CONFIG.damping;
       bubble.vy *= PHYSICS_CONFIG.damping;
-    }
 
-    private updatePosition(bubble: Bubble): void {
+      const sizeRatio = bubble.radius / (this.maxBubbleSize || bubble.radius);
+      const isLargeBubble = sizeRatio >= PHYSICS_CONFIG.largeBubbleThreshold;
+
       bubble.x += bubble.vx;
       bubble.y += bubble.vy;
-    }
 
-    private handleWallCollisions(bubble: Bubble): void {
       if (
         bubble.x + bubble.radius > this.canvasWidth ||
         bubble.x - bubble.radius < 0
@@ -595,14 +432,30 @@ export function usePixiBubbleChart(
         bubble.vy *= PHYSICS_CONFIG.bounceMultiplier;
         bubble.y = Math.max(minY, Math.min(maxY, bubble.y));
       }
-    }
 
-    private applyAttractionToCenter(bubble: Bubble): void {
       const dxToCenter = this.centerX - bubble.x;
       const dyToCenter = this.centerY - bubble.y;
+      const distanceToCenter = Math.sqrt(
+        dxToCenter * dxToCenter + dyToCenter * dyToCenter
+      );
 
-      bubble.vx += dxToCenter * PHYSICS_CONFIG.attractionForce;
-      bubble.vy += dyToCenter * PHYSICS_CONFIG.attractionForce;
+      if (isLargeBubble) {
+        const centerForce = PHYSICS_CONFIG.strongCenterForce;
+
+        if (distanceToCenter > PHYSICS_CONFIG.centerZoneRadius) {
+          const escapeForce =
+            (distanceToCenter - PHYSICS_CONFIG.centerZoneRadius) * 0.0001;
+          bubble.vx += dxToCenter * (centerForce + escapeForce);
+          bubble.vy += dyToCenter * (centerForce + escapeForce);
+        } else {
+          bubble.vx += dxToCenter * centerForce;
+          bubble.vy += dyToCenter * centerForce;
+        }
+      } else {
+        const baseAttractionForce = PHYSICS_CONFIG.attractionForce;
+        bubble.vx += dxToCenter * baseAttractionForce;
+        bubble.vy += dyToCenter * baseAttractionForce;
+      }
     }
 
     private handleBubbleCollision(bubbleA: Bubble, bubbleB: Bubble): void {
@@ -627,29 +480,28 @@ export function usePixiBubbleChart(
       }
     }
 
-    private processCollisionsWithQuadTree(bubbles: Bubble[]): void {
-      this.quadTree.clear();
+    updatePhysics(bubbles: Bubble[]): void {
+      this.maxBubbleSize = Math.max(...bubbles.map((b) => b.radius));
 
-      const visibleBubbles = bubbles.filter((bubble) => bubble.alpha >= 1);
-      visibleBubbles.forEach((bubble) => this.quadTree.insert(bubble));
+      bubbles.forEach((bubble) => this.updateBubblePhysics(bubble));
+
+      this.quadTree.clear();
+      bubbles.forEach((bubble) => this.quadTree.insert(bubble));
 
       const processedPairs = new Set<string>();
 
-      for (const bubble of visibleBubbles) {
+      for (const bubble of bubbles) {
         const searchRadius = bubble.radius * 3;
-        const searchArea = {
+        const nearbyBubbles = this.quadTree.queryRange({
           x: bubble.x - searchRadius,
           y: bubble.y - searchRadius,
           width: searchRadius * 2,
           height: searchRadius * 2,
-        };
-
-        const nearbyBubbles = this.quadTree.queryRange(searchArea);
+        });
 
         for (const nearbyBubble of nearbyBubbles) {
           if (nearbyBubble.id !== bubble.id) {
             const pairKey = [bubble.id, nearbyBubble.id].sort().join("-");
-
             if (!processedPairs.has(pairKey)) {
               this.handleBubbleCollision(bubble, nearbyBubble);
               processedPairs.add(pairKey);
@@ -658,19 +510,6 @@ export function usePixiBubbleChart(
         }
       }
     }
-
-    updatePhysics(bubbles: Bubble[]): void {
-      const visibleBubbles = bubbles.filter((bubble) => bubble.alpha >= 1);
-
-      for (const bubble of visibleBubbles) {
-        this.applyDamping(bubble);
-        this.updatePosition(bubble);
-        this.handleWallCollisions(bubble);
-        this.applyAttractionToCenter(bubble);
-      }
-
-      this.processCollisionsWithQuadTree(bubbles);
-    }
   }
 
   const updatePhysics = (): void => {
@@ -678,7 +517,6 @@ export function usePixiBubbleChart(
 
     const canvasWidth = pixiApp.renderer.width;
     const canvasHeight = pixiApp.renderer.height;
-
     const actualTitleHeight = currentTitleText
       ? currentTitleText.height + currentTitleText.y
       : getTitlePosition(canvasHeight) * 2;
@@ -703,11 +541,12 @@ export function usePixiBubbleChart(
 
     if (activeBubble.value && pixiApp) {
       const rect = pixiApp.canvas.getBoundingClientRect();
-      tooltip.value.visible = true;
-      tooltip.value.x = rect.left + activeBubble.value.x;
-      tooltip.value.y =
-        rect.top + activeBubble.value.y - activeBubble.value.radius - 10;
-      tooltip.value.data = activeBubble.value.data;
+      tooltip.value = {
+        visible: true,
+        x: rect.left + activeBubble.value.x,
+        y: rect.top + activeBubble.value.y - activeBubble.value.radius - 10,
+        data: activeBubble.value.data,
+      };
     } else {
       tooltip.value.visible = false;
     }
@@ -741,7 +580,6 @@ export function usePixiBubbleChart(
     const titlePosition = getTitlePosition(canvasHeight);
 
     if (currentTitleText) {
-      currentTitleText.removeFromParent();
       currentTitleText.text = title.value;
       (currentTitleText.style as PIXI.TextStyle).fontSize = titleFontSize;
       (currentTitleText.style as PIXI.TextStyle).wordWrapWidth =
@@ -770,46 +608,63 @@ export function usePixiBubbleChart(
     const bubblesStartY =
       titlePosition + currentTitleText.height + titleMarginBottom;
     const centerY = bubblesStartY + (canvasHeight - bubblesStartY) * 0.4;
-
     const spawnRadius = Math.min(
       canvasWidth / 3,
       (canvasHeight - bubblesStartY) * 0.4
     );
 
-    data.value.forEach((bubbleData) => {
-      const radius = radiusFromTotal(bubbleData.total, canvasWidth);
+    data.value
+      .sort((a, b) => b.total - a.total)
+      .forEach((bubbleData) => {
+        const radius = radiusFromTotal(bubbleData.total, canvasWidth);
 
-      const container = new PIXI.Container() as BubbleContainer;
-      container.eventMode = "static";
-      container.cursor = "pointer";
-      container.data = bubbleData;
-      container.id = bubbleData._id;
-      container.radius = radius;
-      container.vx = (Math.random() - 0.5) * 0.1;
-      container.vy = (Math.random() - 0.5) * 0.1;
+        const container = new PIXI.Container() as BubbleContainer;
+        container.eventMode = "static";
+        container.cursor = "pointer";
+        container.data = bubbleData;
+        container.id = bubbleData._id;
+        container.radius = radius;
+        container.vx = (Math.random() - 0.5) * 0.1;
+        container.vy = (Math.random() - 0.5) * 0.1;
 
-      const graphics = new PIXI.Graphics();
-      drawBubble(graphics, bubbleData, canvasWidth);
-      container.addChild(graphics);
-      container.graphics = graphics;
+        const graphics = new PIXI.Graphics();
+        drawBubble(graphics, bubbleData, canvasWidth);
+        container.addChild(graphics);
+        container.graphics = graphics;
 
-      const text = createBubbleText(bubbleData, radius, canvasWidth);
-      container.addChild(text);
-      container.text = text;
+        const text = createBubbleText(bubbleData, radius, canvasWidth);
+        container.addChild(text);
+        container.text = text;
 
-      const angle = Math.random() * Math.PI * 2;
-      const distance = Math.random() * spawnRadius;
-      container.x = centerX + distance * Math.cos(angle);
-      container.y = centerY + distance * Math.sin(angle);
+        const maxRadius = Math.max(
+          ...data.value.map((d) => radiusFromTotal(d.total, canvasWidth))
+        );
+        const sizeRatio = radius / maxRadius;
+        const isLargeBubble = sizeRatio >= PHYSICS_CONFIG.largeBubbleThreshold;
 
-      container.on("pointerover", (e: PIXI.FederatedPointerEvent) =>
-        onPointerOver(e, container)
-      );
-      container.on("pointerout", onPointerOut);
+        if (isLargeBubble) {
+          const angle = Math.random() * Math.PI * 2;
+          const distance =
+            Math.random() * (PHYSICS_CONFIG.centerZoneRadius * 0.3);
+          container.x = centerX + distance * Math.cos(angle);
+          container.y = centerY + distance * Math.sin(angle);
+        } else {
+          const angle = Math.random() * Math.PI * 2;
+          const minDistance = PHYSICS_CONFIG.centerZoneRadius * 0.8;
+          const distance =
+            minDistance + Math.random() * (spawnRadius - minDistance);
+          container.x = centerX + distance * Math.cos(angle);
+          container.y = centerY + distance * Math.sin(angle);
+        }
 
-      pixiApp?.stage.addChild(container);
-      bubbleContainers.value.push(container);
-    });
+        container.on("pointerover", (e: PIXI.FederatedPointerEvent) =>
+          onPointerOver(e, container)
+        );
+        container.on("pointerout", onPointerOut);
+
+        pixiApp?.stage.addChild(container);
+        bubbleContainers.value.push(container);
+      });
   };
 
   const reinitialize = () => {
@@ -819,10 +674,6 @@ export function usePixiBubbleChart(
   };
 
   const initializePixi = async () => {
-    if (typeof window !== "undefined") {
-      devicePixelRatio.value = window.devicePixelRatio || 1;
-    }
-
     if (pixiContainerRef.value && !pixiApp) {
       pixiApp = new PIXI.Application();
 
@@ -830,7 +681,7 @@ export function usePixiBubbleChart(
         width: 800,
         height: 450,
         background: 0xffffff,
-        resolution: devicePixelRatio.value,
+        resolution: window.devicePixelRatio || 1,
         antialias: true,
         premultipliedAlpha: false,
         preserveDrawingBuffer: false,
@@ -838,10 +689,8 @@ export function usePixiBubbleChart(
       });
 
       pixiContainerRef.value.appendChild(pixiApp.canvas);
-
       resizeCanvas();
       window.addEventListener("resize", resizeCanvas);
-
       initializeBubbles();
       pixiApp.ticker.add(updatePhysics);
     } else if (pixiApp) {
